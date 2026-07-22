@@ -30,6 +30,11 @@ export interface IUser extends Document {
   tacCode: string;
   requestingCard: boolean;
   isVerified: boolean;
+  idType: string;
+  gender: string;
+  occupation: string;
+  city: string;
+  state: string;
   deleted: boolean;
 }
 
@@ -63,6 +68,11 @@ const UserSchema: Schema = new Schema({
   tacCode: { type: String, default: '' },
   requestingCard: { type: Boolean, default: false },
   isVerified: { type: Boolean, default: false },
+  idType: { type: String, default: 'Passport' },
+  gender: { type: String, default: '' },
+  occupation: { type: String, default: '' },
+  city: { type: String, default: '' },
+  state: { type: String, default: '' },
   deleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

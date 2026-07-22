@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../middlewares/auth';
 import {
   getProfile,
+  updateOwnProfile,
   getAccounts,
   getTransactions,
   requestCode,
@@ -15,6 +16,7 @@ const router = Router();
 
 // Profile
 router.get('/profile', authenticateToken, getProfile);
+router.put('/profile', authenticateToken, updateOwnProfile);
 
 // Accounts
 router.get('/accounts', authenticateToken, getAccounts);

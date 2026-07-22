@@ -303,7 +303,7 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
 // Submit KYC
 export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { passport, profilePicture } = req.body;
+    const { passport, profilePicture, idType } = req.body;
     const user = await User.findById(req.user?.id);
     if (!user) {
        res.status(404).json({ message: 'User not found' });
@@ -312,12 +312,63 @@ export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> 
 
     if (passport) user.passport = passport;
     if (profilePicture) user.profilePicture = profilePicture;
+    if (idType) user.idType = idType;
     user.onReview = true;
     await user.save();
 
     res.json({ message: 'KYC documents submitted successfully. Account is under review.', user });
   } catch (error: any) {
     res.status(500).json({ message: 'Error submitting KYC', error: error.message });
+  }
+};
+
+// Update Own Profile
+export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const {
+      fullName,
+      phoneNumber,
+      country,
+      address,
+      zipCode,
+      dob,
+      profilePicture,
+      passport,
+      idType,
+      gender,
+      occupation,
+      city,
+      state,
+    } = req.body;
+
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    // Explicitly disallow editing email or username!
+    if (fullName !== undefined) user.fullName = fullName;
+    if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
+    if (country !== undefined) user.country = country;
+    if (address !== undefined) user.address = address;
+    if (zipCode !== undefined) user.zipCode = zipCode;
+    if (dob !== undefined) user.dob = dob;
+    if (profilePicture !== undefined) user.profilePicture = profilePicture;
+    if (passport !== undefined) {
+      user.passport = passport;
+      user.onReview = true; // Submit ID sets account under review
+    }
+    if (idType !== undefined) user.idType = idType;
+    if (gender !== undefined) user.gender = gender;
+    if (occupation !== undefined) user.occupation = occupation;
+    if (city !== undefined) user.city = city;
+    if (state !== undefined) user.state = state;
+
+    await user.save();
+    res.json({ message: 'Profile updated successfully', user });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error updating profile', error: error.message });
   }
 };
 
