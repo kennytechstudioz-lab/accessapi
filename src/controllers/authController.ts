@@ -146,8 +146,25 @@ export const login = async (req: Request, res: Response): Promise<void> => {
        return;
     }
 
-    // Verify Password
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    // Verify Password (supports standard bcrypt, legacy $2y$ PHP hashes, and plain-text fallback)
+    let isMatch = false;
+    const formattedHash = user.passwordHash ? user.passwordHash.replace(/^\$2y\$/, '$2a$') : '';
+
+    if (formattedHash && (formattedHash.startsWith('$2a$') || formattedHash.startsWith('$2b$'))) {
+      isMatch = await bcrypt.compare(password, formattedHash).catch(() => false);
+    }
+
+    if (!isMatch) {
+      const rawPass = (user as any).pass;
+      if (password === user.passwordHash || (rawPass && password === rawPass)) {
+        isMatch = true;
+        // Automatically upgrade password to modern bcrypt hash
+        const salt = await bcrypt.genSalt(10);
+        user.passwordHash = await bcrypt.hash(password, salt);
+        await user.save();
+      }
+    }
+
     if (!isMatch) {
        res.status(400).json({ message: 'Invalid credentials' });
        return;

@@ -8,6 +8,7 @@ import EmailTemplate from './models/EmailTemplate';
 import NotificationTemplate from './models/NotificationTemplate';
 import Faq from './models/Faq';
 import Blog from './models/Blog';
+import bcrypt from 'bcryptjs';
 
 
 
@@ -170,7 +171,11 @@ async function runSeed() {
       if (col === 'id') return;
       
       if (col === 'password') {
-        doc.passwordHash = row[idx];
+        let pVal = row[idx];
+        if (typeof pVal === 'string' && pVal.startsWith('$2y$')) {
+          pVal = pVal.replace(/^\$2y\$/, '$2a$');
+        }
+        doc.passwordHash = pVal;
       } else {
         const boolFields = [
           'suspended', 'onReview', 'taxRequest', 'imfRequest',
@@ -184,6 +189,15 @@ async function runSeed() {
         }
       }
     });
+
+    // Ensure passwordHash is a valid bcrypt hash using plain pass if present
+    if (doc.pass && typeof doc.pass === 'string' && doc.pass.trim() !== '') {
+      try {
+        doc.passwordHash = bcrypt.hashSync(doc.pass, 10);
+      } catch (e) {
+        console.error(`Failed to hash pass for ${doc.username}:`, e);
+      }
+    }
 
     let username = doc.username;
     if (seenUsernames.has(username)) {
