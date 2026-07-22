@@ -372,6 +372,110 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+// Lookup Account by Account Number
+export const lookupAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { accountNumber } = req.query;
+    if (!accountNumber) {
+      res.status(400).json({ message: 'Account number is required' });
+      return;
+    }
+
+    const user = await User.findOne({
+      $or: [{ accountNumber: accountNumber as string }, { username: accountNumber as string }],
+      deleted: false,
+    });
+
+    if (!user) {
+      res.status(404).json({ message: 'Account number not found' });
+      return;
+    }
+
+    res.json({
+      found: true,
+      fullName: user.fullName || user.username,
+      accountNumber: user.accountNumber,
+      username: user.username,
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error searching account', error: error.message });
+  }
+};
+
+// Set / Change Transaction PIN
+export const setPin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { pin } = req.body;
+    if (!pin || pin.toString().length < 4) {
+      res.status(400).json({ message: 'PIN must be at least 4 digits.' });
+      return;
+    }
+
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    user.pin = parseInt(pin);
+    await user.save();
+
+    res.json({ message: 'Transaction PIN saved successfully', pinSet: true });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error setting PIN', error: error.message });
+  }
+};
+
+// Change User Password (verifying old password)
+export const changeUserPassword = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      res.status(400).json({ message: 'Old and new passwords are required' });
+      return;
+    }
+
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!isMatch) {
+      res.status(400).json({ message: 'Current password entered is incorrect.' });
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.passwordHash = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error changing password', error: error.message });
+  }
+};
+
+// Toggle 2FA Security
+export const toggle2FA = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { enabled } = req.body;
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    user.twoFactorEnabled = enabled;
+    await user.save();
+
+    res.json({ message: `2FA security ${enabled ? 'enabled' : 'disabled'} successfully`, twoFactorEnabled: user.twoFactorEnabled });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error updating 2FA settings', error: error.message });
+  }
+};
+
 // Get Cards
 export const getCards = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

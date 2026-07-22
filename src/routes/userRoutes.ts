@@ -3,6 +3,10 @@ import { authenticateToken } from '../middlewares/auth';
 import {
   getProfile,
   updateOwnProfile,
+  lookupAccount,
+  setPin,
+  changeUserPassword,
+  toggle2FA,
   getAccounts,
   getTransactions,
   requestCode,
@@ -14,9 +18,15 @@ import {
 
 const router = Router();
 
-// Profile
+// Profile & Account Lookup
 router.get('/profile', authenticateToken, getProfile);
 router.put('/profile', authenticateToken, updateOwnProfile);
+router.get('/lookup-account', authenticateToken, lookupAccount);
+
+// Security, PIN & Password
+router.post('/set-pin', authenticateToken, setPin);
+router.post('/change-password', authenticateToken, changeUserPassword);
+router.post('/toggle-2fa', authenticateToken, toggle2FA);
 
 // Accounts
 router.get('/accounts', authenticateToken, getAccounts);

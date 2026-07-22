@@ -35,6 +35,7 @@ export interface IUser extends Document {
   occupation: string;
   city: string;
   state: string;
+  twoFactorEnabled: boolean;
   deleted: boolean;
 }
 
@@ -73,6 +74,7 @@ const UserSchema: Schema = new Schema({
   occupation: { type: String, default: '' },
   city: { type: String, default: '' },
   state: { type: String, default: '' },
+  twoFactorEnabled: { type: Boolean, default: false },
   deleted: { type: Boolean, default: false },
 }, { timestamps: true });
 
