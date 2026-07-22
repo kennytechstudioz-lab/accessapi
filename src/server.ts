@@ -1,3 +1,4 @@
+import http from 'http';
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -8,11 +9,16 @@ import userRoutes from './routes/user';
 import adminRoutes from './routes/admin';
 import User from './models/User';
 import SystemSettings from './models/SystemSettings';
+import NotificationTemplate from './models/NotificationTemplate';
+import { initWebSocketServer } from './utils/websocket';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+const server = http.createServer(app);
+initWebSocketServer(server);
 
 // Middlewares
 app.use(cors({
@@ -38,7 +44,7 @@ app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'Access National Bank API is active.' });
 });
 
-// Seed Admin Account & Default Settings
+// Seed Admin Account, Notification Templates & Default Settings
 const seedDatabase = async () => {
   try {
     // Seed Settings
@@ -47,6 +53,27 @@ const seedDatabase = async () => {
       const defaultSettings = new SystemSettings();
       await defaultSettings.save();
       console.log('Seeded default system settings.');
+    }
+
+    // Seed Notification Templates for KYC Verification
+    const kycProcessingTemplate = await NotificationTemplate.findOne({ name: 'kyc_processing' });
+    if (!kycProcessingTemplate) {
+      await NotificationTemplate.create({
+        name: 'kyc_processing',
+        title: 'Identity Verification Under Review',
+        content: 'Your uploaded identity clearance document ({idType}) has been received and is currently under review by our compliance desk. Reviews usually complete within 1-2 hours.',
+      });
+      console.log('Seeded kyc_processing notification template.');
+    }
+
+    const kycPendingAdminTemplate = await NotificationTemplate.findOne({ name: 'kyc_pending_admin' });
+    if (!kycPendingAdminTemplate) {
+      await NotificationTemplate.create({
+        name: 'kyc_pending_admin',
+        title: 'New Identity Verification Pending',
+        content: 'Client {fullName} (@{username}) has submitted an identity clearance document ({idType}) for KYC verification. Administrative audit required.',
+      });
+      console.log('Seeded kyc_pending_admin notification template.');
     }
 
     // Seed Admin
@@ -90,7 +117,7 @@ mongoose.connect(mongoUri)
   .then(async () => {
     console.log('MongoDB Connected successfully.');
     await seedDatabase();
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
   })

@@ -5,7 +5,9 @@ import User from '../models/User';
 import UserAccount from '../models/UserAccount';
 import Transaction from '../models/Transaction';
 import Card from '../models/Card';
+import Notification from '../models/Notification';
 import { sendAlertEmail, sendEmail } from '../utils/mailer';
+import { broadcastToAdmins, sendToUser } from '../utils/websocket';
 
 
 // Get Profile
@@ -300,6 +302,54 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
   }
 };
 
+// Helper to create notifications and emit WebSocket events for KYC submissions
+const sendKycSubmissionNotifications = async (user: any, idTypeSubmitted?: string) => {
+  try {
+    const docType = idTypeSubmitted || user.idType || 'Passport';
+
+    // 1. Processing Notification for User
+    const userNotif = new Notification({
+      username: user.username,
+      title: 'Identity Verification Under Review',
+      content: `Your uploaded identity clearance document (${docType}) has been received and is currently under review by our compliance desk. Verification usually completes within 1-2 hours.`,
+      isRead: false,
+      time: Math.floor(Date.now() / 1000),
+    });
+    await userNotif.save();
+
+    // 2. Pending Notification for Admin
+    const adminNotif = new Notification({
+      username: 'Admin',
+      title: 'New Identity Verification Pending Review',
+      content: `Client ${user.fullName || user.username} (@${user.username}) has submitted an identity clearance document (${docType}) for KYC verification. Administrative audit required.`,
+      isRead: false,
+      time: Math.floor(Date.now() / 1000),
+    });
+    await adminNotif.save();
+
+    // 3. Emit Realtime WebSocket Events
+    broadcastToAdmins({
+      type: 'KYC_PENDING',
+      title: 'New Identity Verification Pending Review',
+      content: `Client ${user.fullName || user.username} (@${user.username}) has submitted an identity clearance document (${docType}) for KYC verification.`,
+      username: user.username,
+      fullName: user.fullName || user.username,
+      idType: docType,
+      createdAt: new Date().toISOString(),
+    });
+
+    sendToUser(user.username, {
+      type: 'KYC_PROCESSING',
+      title: 'Identity Verification Under Review',
+      content: `Your uploaded identity clearance document (${docType}) is currently under review by our compliance team.`,
+      idType: docType,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Error sending KYC submission notifications:', err);
+  }
+};
+
 // Submit KYC
 export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -315,6 +365,9 @@ export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> 
     if (idType) user.idType = idType;
     user.onReview = true;
     await user.save();
+
+    // Send Processing notification to User & Pending notification to Admin via WebSocket
+    await sendKycSubmissionNotifications(user, idType);
 
     res.json({ message: 'KYC documents submitted successfully. Account is under review.', user });
   } catch (error: any) {
@@ -347,6 +400,8 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    let isDocumentSubmitted = false;
+
     // Explicitly disallow editing email or username!
     if (fullName !== undefined) user.fullName = fullName;
     if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
@@ -358,6 +413,7 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
     if (passport !== undefined) {
       user.passport = passport;
       user.onReview = true; // Submit ID sets account under review
+      isDocumentSubmitted = true;
     }
     if (idType !== undefined) user.idType = idType;
     if (gender !== undefined) user.gender = gender;
@@ -366,6 +422,11 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
     if (state !== undefined) user.state = state;
 
     await user.save();
+
+    if (isDocumentSubmitted) {
+      await sendKycSubmissionNotifications(user, idType);
+    }
+
     res.json({ message: 'Profile updated successfully', user });
   } catch (error: any) {
     res.status(500).json({ message: 'Error updating profile', error: error.message });
