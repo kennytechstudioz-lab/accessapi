@@ -26,9 +26,11 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             export PATH=$PATH:/usr/local/bin:~/.npm-global/bin
             cd /var/www/projects/banking/access/api
+            git reset --hard HEAD
             git pull origin main
             npm install --legacy-peer-deps
             npm run build
             pm2 restart access-api || npx pm2 restart access-api
             echo "✅ Access API restarted successfully."
+
 
