@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import UserAccount from '../models/UserAccount';
+import { sendTemplateEmail } from '../utils/mailer';
 
 // Generate Random Account Number
 const generateAccountNumber = (): string => {
@@ -87,6 +88,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       });
       await newAcc.save();
     }
+
+    // Send Registration Email using template "Registration-Successful"
+    sendTemplateEmail(newUser.email, 'Registration-Successful', {
+      fullName: newUser.fullName,
+      username: newUser.username,
+      email: newUser.email,
+      accountNumber: newUser.accountNumber,
+    }).catch((err) => console.error('Error sending registration email:', err));
 
     // Generate JWT
     const token = jwt.sign(
