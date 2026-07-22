@@ -19,7 +19,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, email, password, fullName, phoneNumber, country, address, dob, pin, baseCurrency } = req.body;
 
-    if (!username || !email || !password || !fullName || !pin) {
+    if (!username || !email || !password || !fullName) {
        res.status(400).json({ message: 'Missing required fields' });
        return;
     }
@@ -50,7 +50,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       country: country || '',
       address: address || '',
       dob: dob ? new Date(dob).getTime() : 0,
-      pin: parseInt(pin) || 0,
+      pin: pin ? (parseInt(pin) || 1234) : Math.floor(1000 + Math.random() * 9000),
       accountNumber,
       iban,
       routine,
@@ -68,9 +68,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       { code: 'CAD', symbol: '$', logo: 'https://flagcdn.com/w320/ca.png' },
     ];
 
+    const selectedBaseCurrency = baseCurrency || 'USD';
     for (const curr of defaultCurrencies) {
-      const isBase = curr.code === baseCurrency;
+      const isBase = curr.code === selectedBaseCurrency;
       const initialBalance = isBase ? 1000 : 0; // Seeding 1000 in base currency
+
       
       const newAcc = new UserAccount({
         username,
