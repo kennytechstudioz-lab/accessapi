@@ -1,6 +1,7 @@
 import { Schema, model, Document } from 'mongoose';
 
 export interface ICurrency extends Document {
+  country?: string;
   name: string;
   symbol: string;
   bankName?: string;
@@ -14,6 +15,7 @@ export interface ICurrency extends Document {
 }
 
 const CurrencySchema = new Schema<ICurrency>({
+  country: { type: String, default: '' },
   name: { type: String, required: true },
   symbol: { type: String, default: '' },
   bankName: { type: String, default: '' },
