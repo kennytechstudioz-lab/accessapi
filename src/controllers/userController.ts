@@ -522,14 +522,24 @@ export const changeAdminPassword = async (req: AuthRequest, res: Response): Prom
   try {
     const { password } = req.body;
 
-    if (!password || password.length < 6) {
-      res.status(400).json({ message: 'Password must be at least 6 characters.' });
+    if (!password || password.length < 4) {
+      res.status(400).json({ message: 'Password must be at least 4 characters.' });
       return;
     }
 
-    const admin = await User.findById(req.user?.id);
-    if (!admin || admin.status !== 'Admin') {
-      res.status(403).json({ message: 'Forbidden. Admin only.' });
+    let admin = null;
+    if (req.user?.id) {
+      admin = await User.findById(req.user.id);
+    }
+    if (!admin && req.user?.username) {
+      admin = await User.findOne({ username: req.user.username });
+    }
+    if (!admin) {
+      admin = await User.findOne({ status: { $regex: /^admin$/i } });
+    }
+
+    if (!admin) {
+      res.status(404).json({ message: 'Admin user account not found.' });
       return;
     }
 
