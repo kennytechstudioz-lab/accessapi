@@ -15,6 +15,11 @@ import {
   getCards,
   requestCard
 } from '../controllers/userController';
+import {
+  getUserNotifications,
+  markNotificationRead,
+  markAllNotificationsRead
+} from '../controllers/notificationController';
 
 const router = Router();
 
@@ -22,6 +27,11 @@ const router = Router();
 router.get('/profile', authenticateToken, getProfile);
 router.put('/profile', authenticateToken, updateOwnProfile);
 router.get('/lookup-account', authenticateToken, lookupAccount);
+
+// Notifications
+router.get('/notifications', authenticateToken, getUserNotifications);
+router.put('/notifications/:id/read', authenticateToken, markNotificationRead);
+router.put('/notifications/read-all', authenticateToken, markAllNotificationsRead);
 
 // Security, PIN & Password
 router.post('/set-pin', authenticateToken, setPin);

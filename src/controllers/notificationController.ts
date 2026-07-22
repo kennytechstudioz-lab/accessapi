@@ -127,3 +127,61 @@ export const updateNotificationTemplate = async (req: AuthRequest, res: Response
     res.status(500).json({ message: 'Error updating template', error: error.message });
   }
 };
+
+// Get User Notifications (for logged in client)
+export const getUserNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const username = req.user?.username;
+    if (!username) {
+      res.status(401).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    const notifications = await Notification.find({
+      $or: [{ username }, { username: 'All' }, { username: 'all' }],
+    }).sort({ createdAt: -1, time: -1, _id: -1 });
+
+    res.json(notifications);
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error fetching user notifications', error: error.message });
+  }
+};
+
+// Mark Single Notification as Read
+export const markNotificationRead = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findById(id);
+    if (!notification) {
+      res.status(404).json({ message: 'Notification not found' });
+      return;
+    }
+
+    notification.isRead = true;
+    await notification.save();
+
+    res.json({ message: 'Notification marked as read', notification });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error marking notification read', error: error.message });
+  }
+};
+
+// Mark All Notifications as Read
+export const markAllNotificationsRead = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const username = req.user?.username;
+    if (!username) {
+      res.status(401).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    await Notification.updateMany(
+      { $or: [{ username }, { username: 'All' }, { username: 'all' }], isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    res.json({ message: 'All notifications marked as read' });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error marking all notifications read', error: error.message });
+  }
+};
