@@ -606,13 +606,36 @@ const sendKycSubmissionNotifications = async (user: any, idTypeSubmitted?: strin
   try {
     const docType = idTypeSubmitted || user.idType || 'Passport';
 
+    let userNotifTitle = 'Identity Verification Under Review';
+    let userNotifContent = `We write to notify you that your identity verification profile for ${docType} is processing and under review. You will be notified upon approval.`;
+
+    try {
+      const kycTpl = await NotificationTemplate.findOne({
+        $or: [{ name: 'kyc_processing' }, { name: 'KYC-Processing' }]
+      });
+      if (kycTpl) {
+        userNotifTitle = kycTpl.title
+          .replace(/\{\{idType\}\}/g, docType)
+          .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
+          .replace(/\{\{username\}\}/g, user.username);
+
+        userNotifContent = kycTpl.content
+          .replace(/\{\{idType\}\}/g, docType)
+          .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
+          .replace(/\{\{username\}\}/g, user.username);
+      }
+    } catch (e) {
+      console.error('Error finding kyc_processing notification template:', e);
+    }
+
     // 1. Processing Notification for User
     const userNotif = new Notification({
       username: user.username,
-      title: 'Identity Verification Under Review',
-      content: `Your uploaded identity clearance document (${docType}) has been received and is currently under review by our compliance desk. Verification usually completes within 1-2 hours.`,
+      title: userNotifTitle,
+      content: userNotifContent,
       isRead: false,
       time: Math.floor(Date.now() / 1000),
+      admin: false,
     });
     await userNotif.save();
 
@@ -623,6 +646,7 @@ const sendKycSubmissionNotifications = async (user: any, idTypeSubmitted?: strin
       content: `Client ${user.fullName || user.username} (@${user.username}) has submitted an identity clearance document (${docType}) for KYC verification. Administrative audit required.`,
       isRead: false,
       time: Math.floor(Date.now() / 1000),
+      admin: true,
     });
     await adminNotif.save();
 
@@ -639,9 +663,10 @@ const sendKycSubmissionNotifications = async (user: any, idTypeSubmitted?: strin
 
     sendToUser(user.username, {
       type: 'KYC_PROCESSING',
-      title: 'Identity Verification Under Review',
-      content: `Your uploaded identity clearance document (${docType}) is currently under review by our compliance team.`,
+      title: userNotifTitle,
+      content: userNotifContent,
       idType: docType,
+      notification: userNotif,
       createdAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -656,6 +681,11 @@ export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> 
     const user = await User.findById(req.user?.id);
     if (!user) {
        res.status(404).json({ message: 'User not found' });
+       return;
+    }
+
+    if (user.isVerified) {
+       res.status(400).json({ message: 'Your identity has already been verified and approved. Verification forms cannot be modified once verified.' });
        return;
     }
 
@@ -699,6 +729,11 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
+    if (user.isVerified && passport !== undefined) {
+      res.status(400).json({ message: 'Your identity has already been verified and approved. Verification forms cannot be modified once verified.' });
+      return;
+    }
+
     let isDocumentSubmitted = false;
 
     // Explicitly disallow editing email or username!
@@ -707,7 +742,16 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
     if (country !== undefined) user.country = country;
     if (address !== undefined) user.address = address;
     if (zipCode !== undefined) user.zipCode = zipCode;
-    if (dob !== undefined) user.dob = dob;
+    if (dob !== undefined) {
+      if (typeof dob === 'number') {
+        user.dob = dob;
+      } else if (typeof dob === 'string' && dob.trim() !== '') {
+        const parsed = new Date(dob).getTime();
+        user.dob = isNaN(parsed) ? (parseInt(dob) || 0) : parsed;
+      } else {
+        user.dob = 0;
+      }
+    }
     if (profilePicture !== undefined) user.profilePicture = profilePicture;
     if (passport !== undefined) {
       user.passport = passport;
@@ -719,6 +763,11 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
     if (occupation !== undefined) user.occupation = occupation;
     if (city !== undefined) user.city = city;
     if (state !== undefined) user.state = state;
+
+    if (!user.isVerified) {
+      user.onReview = true;
+      isDocumentSubmitted = true;
+    }
 
     await user.save();
 
@@ -930,7 +979,14 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
       email,
       phoneNumber,
       country,
+      state,
+      city,
       address,
+      zipCode,
+      gender,
+      occupation,
+      dob,
+      idType,
       pin,
       suspended,
       isVerified,
@@ -952,11 +1008,100 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
     if (email !== undefined) user.email = email;
     if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
     if (country !== undefined) user.country = country;
+    if (state !== undefined) user.state = state;
+    if (city !== undefined) user.city = city;
     if (address !== undefined) user.address = address;
+    if (zipCode !== undefined) user.zipCode = zipCode;
+    if (gender !== undefined) user.gender = gender;
+    if (occupation !== undefined) user.occupation = occupation;
+    if (idType !== undefined) user.idType = idType;
+    if (dob !== undefined) {
+      if (typeof dob === 'number') {
+        user.dob = dob;
+      } else if (typeof dob === 'string' && dob.trim() !== '') {
+        const parsed = new Date(dob).getTime();
+        user.dob = isNaN(parsed) ? (parseInt(dob) || 0) : parsed;
+      }
+    }
     if (pin !== undefined) user.pin = parseInt(pin) || 0;
     if (suspended !== undefined) user.suspended = suspended;
-    if (isVerified !== undefined) user.isVerified = isVerified;
-    if (onReview !== undefined) user.onReview = onReview;
+    if (isVerified !== undefined) {
+      const wasVerified = user.isVerified;
+      user.isVerified = isVerified;
+      if (onReview !== undefined) {
+        user.onReview = onReview;
+      } else {
+        user.onReview = false;
+      }
+
+      if (isVerified) {
+        let appTitle = 'Identity Clearance Approved';
+        let appContent = 'We write to notify you that your identity verification profile (KYC) has been reviewed and approved. Your account is now fully cleared and verified. You may now apply for credit cards.';
+
+        try {
+          const appTemp = await NotificationTemplate.findOne({
+            $or: [{ name: 'KYC-Approved' }, { name: 'kyc_approved' }]
+          });
+          if (appTemp) {
+            appTitle = appTemp.title.replace(/\{\{fullName\}\}/g, user.fullName || user.username).replace(/\{\{username\}\}/g, user.username);
+            appContent = appTemp.content.replace(/\{\{fullName\}\}/g, user.fullName || user.username).replace(/\{\{username\}\}/g, user.username);
+          }
+        } catch (e) {
+          console.error('Error finding KYC-Approved template:', e);
+        }
+
+        const kycNotif = new Notification({
+          username: user.username,
+          title: appTitle,
+          content: appContent,
+          time: Math.floor(Date.now() / 1000),
+          isRead: false,
+          admin: false,
+        });
+        await kycNotif.save();
+
+        sendToUser(user.username, {
+          type: 'KYC_APPROVED',
+          title: appTitle,
+          content: appContent,
+          notification: kycNotif,
+        });
+      } else if (!isVerified && (onReview === false || !user.onReview)) {
+        let rejTitle = 'Identity Verification Update';
+        let rejContent = 'We write to notify you that your identity verification profile (KYC) submission could not be approved. Please review your profile information and re-upload valid identity documentation.';
+
+        try {
+          const rejTemp = await NotificationTemplate.findOne({
+            $or: [{ name: 'KYC-Rejected' }, { name: 'kyc_rejected' }]
+          });
+          if (rejTemp) {
+            rejTitle = rejTemp.title.replace(/\{\{fullName\}\}/g, user.fullName || user.username).replace(/\{\{username\}\}/g, user.username);
+            rejContent = rejTemp.content.replace(/\{\{fullName\}\}/g, user.fullName || user.username).replace(/\{\{username\}\}/g, user.username);
+          }
+        } catch (e) {
+          console.error('Error finding KYC-Rejected template:', e);
+        }
+
+        const rejNotif = new Notification({
+          username: user.username,
+          title: rejTitle,
+          content: rejContent,
+          time: Math.floor(Date.now() / 1000),
+          isRead: false,
+          admin: false,
+        });
+        await rejNotif.save();
+
+        sendToUser(user.username, {
+          type: 'KYC_REJECTED',
+          title: rejTitle,
+          content: rejContent,
+          notification: rejNotif,
+        });
+      }
+    } else if (onReview !== undefined) {
+      user.onReview = onReview;
+    }
     if (swiftCode !== undefined) user.swiftCode = swiftCode;
     if (routine !== undefined) user.routine = routine;
     if (iban !== undefined) user.iban = iban;

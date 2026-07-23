@@ -26,7 +26,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Request logger middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -154,6 +155,30 @@ const seedDatabase = async () => {
         content: 'Client {{senderName}} (@{{senderUsername}}) initiated an international wire transfer of {{currency}} {{amount}} to {{receiverName}} at {{receiverBank}}. Pending admin approval.',
       });
       console.log('Seeded Wire-Transfer-Admin notification template.');
+    }
+
+    const kycApprovedTemp = await NotificationTemplate.findOne({
+      $or: [{ name: 'KYC-Approved' }, { name: 'kyc_approved' }]
+    });
+    if (!kycApprovedTemp) {
+      await NotificationTemplate.create({
+        name: 'KYC-Approved',
+        title: 'Identity Clearance Approved',
+        content: 'We write to notify you that your identity verification profile (KYC) has been reviewed and approved. Your account is now fully cleared and verified. You may now apply for credit cards.',
+      });
+      console.log('Seeded KYC-Approved notification template.');
+    }
+
+    const kycRejectedTemp = await NotificationTemplate.findOne({
+      $or: [{ name: 'KYC-Rejected' }, { name: 'kyc_rejected' }]
+    });
+    if (!kycRejectedTemp) {
+      await NotificationTemplate.create({
+        name: 'KYC-Rejected',
+        title: 'Identity Verification Update',
+        content: 'We write to notify you that your identity verification profile (KYC) submission could not be approved. Please review your profile information and re-upload valid identity documentation.',
+      });
+      console.log('Seeded KYC-Rejected notification template.');
     }
 
     // Seed Admin

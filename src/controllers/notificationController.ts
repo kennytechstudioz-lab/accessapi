@@ -7,7 +7,7 @@ import User from '../models/User';
 // List Notifications
 export const listNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const notifications = await Notification.find({}).sort({ createdAt: -1 });
+    const notifications = await Notification.find({}).sort({ createdAt: -1, time: -1, _id: -1 });
     res.json(notifications);
   } catch (error: any) {
     res.status(500).json({ message: 'Error fetching notifications', error: error.message });
@@ -175,10 +175,17 @@ export const markAllNotificationsRead = async (req: AuthRequest, res: Response):
       return;
     }
 
-    await Notification.updateMany(
-      { $or: [{ username }, { username: 'All' }, { username: 'all' }], isRead: false },
-      { $set: { isRead: true } }
-    );
+    if (req.user?.status === 'Admin' || username.toLowerCase() === 'admin') {
+      await Notification.updateMany(
+        { isRead: false },
+        { $set: { isRead: true } }
+      );
+    } else {
+      await Notification.updateMany(
+        { $or: [{ username }, { username: 'All' }, { username: 'all' }], isRead: false },
+        { $set: { isRead: true } }
+      );
+    }
 
     res.json({ message: 'All notifications marked as read' });
   } catch (error: any) {
