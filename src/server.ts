@@ -117,6 +117,14 @@ mongoose.connect(mongoUri)
   .then(async () => {
     console.log('MongoDB Connected successfully.');
     await seedDatabase();
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use by another process. Terminate existing process using "kill -9 <PID>" or change PORT.`);
+        process.exit(1);
+      }
+    });
+
     server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
