@@ -6,6 +6,7 @@ import UserAccount from '../models/UserAccount';
 import Transaction from '../models/Transaction';
 import Card from '../models/Card';
 import Notification from '../models/Notification';
+import Currency from '../models/Currency';
 import { sendAlertEmail, sendEmail } from '../utils/mailer';
 import { broadcastToAdmins, sendToUser } from '../utils/websocket';
 
@@ -27,7 +28,44 @@ export const getProfile = async (req: AuthRequest, res: Response): Promise<void>
 // Get Accounts
 export const getAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const accounts = await UserAccount.find({ username: req.user?.username });
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    // 1. Fetch all admin-configured currencies from DB
+    const adminCurrencies = await Currency.find({});
+    
+    // 2. Fetch existing user accounts
+    let accounts = await UserAccount.find({ username: req.user?.username });
+    const existingCurrencies = new Set(accounts.map((a) => a.currency));
+
+    // 3. Auto-create any missing currency accounts for this user
+    if (adminCurrencies.length > 0) {
+      let createdNew = false;
+      for (const curr of adminCurrencies) {
+        if (!existingCurrencies.has(curr.name)) {
+          const newAcc = new UserAccount({
+            username: user.username,
+            currency: curr.name,
+            balance: 0,
+            symbol: curr.symbol || '$',
+            logo: curr.logo || '',
+            accountNumber: user.accountNumber,
+            name: user.fullName || user.username,
+            totalIncome: 0,
+            totalTransactions: 0,
+          });
+          await newAcc.save();
+          createdNew = true;
+        }
+      }
+      if (createdNew) {
+        accounts = await UserAccount.find({ username: req.user?.username });
+      }
+    }
+
     res.json(accounts);
   } catch (error: any) {
     res.status(500).json({ message: 'Error fetching accounts', error: error.message });

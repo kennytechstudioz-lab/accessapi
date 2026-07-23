@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import UserAccount from '../models/UserAccount';
+import Currency from '../models/Currency';
 import { sendTemplateEmail } from '../utils/mailer';
 
 // Generate Random Account Number
@@ -61,20 +62,31 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     await newUser.save();
 
-    // Create default Multi-currency Accounts
-    const defaultCurrencies = [
-      { code: 'USD', symbol: '$', logo: 'https://flagcdn.com/w320/us.png' },
-      { code: 'EUR', symbol: '€', logo: 'https://flagcdn.com/w320/eu.png' },
-      { code: 'GBP', symbol: '£', logo: 'https://flagcdn.com/w320/gb.png' },
-      { code: 'CAD', symbol: '$', logo: 'https://flagcdn.com/w320/ca.png' },
-    ];
+    // Fetch all admin-configured currencies from DB
+    const adminCurrencies = await Currency.find({});
+    let currenciesToCreate: { code: string; symbol: string; logo: string }[] = [];
+
+    if (adminCurrencies.length > 0) {
+      currenciesToCreate = adminCurrencies.map((c) => ({
+        code: c.name,
+        symbol: c.symbol || '$',
+        logo: c.logo || '',
+      }));
+    } else {
+      // Fallback default list if DB has no currencies seeded
+      currenciesToCreate = [
+        { code: 'USD', symbol: '$', logo: 'https://flagcdn.com/w320/us.png' },
+        { code: 'EUR', symbol: '€', logo: 'https://flagcdn.com/w320/eu.png' },
+        { code: 'GBP', symbol: '£', logo: 'https://flagcdn.com/w320/gb.png' },
+        { code: 'CAD', symbol: '$', logo: 'https://flagcdn.com/w320/ca.png' },
+      ];
+    }
 
     const selectedBaseCurrency = baseCurrency || 'USD';
-    for (const curr of defaultCurrencies) {
+    for (const curr of currenciesToCreate) {
       const isBase = curr.code === selectedBaseCurrency;
       const initialBalance = isBase ? 1000 : 0; // Seeding 1000 in base currency
 
-      
       const newAcc = new UserAccount({
         username,
         currency: curr.code,
