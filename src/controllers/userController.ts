@@ -697,7 +697,7 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
   }
 };
 
-// Delete User (Soft Delete)
+// Delete User (Full Cascade Deletion of all user-related documents)
 export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const user = await User.findById(req.params.id);
@@ -705,11 +705,21 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
       res.status(404).json({ message: 'User not found' });
       return;
     }
-    user.deleted = true;
-    await user.save();
-    res.json({ message: 'User deleted successfully' });
+
+    const username = user.username;
+
+    // Cascade delete all documents associated with this user across all collections
+    await Promise.all([
+      UserAccount.deleteMany({ username }),
+      Transaction.deleteMany({ $or: [{ username }, { receiverUsername: username }] }),
+      Card.deleteMany({ username }),
+      Notification.deleteMany({ username }),
+      User.findByIdAndDelete(req.params.id),
+    ]);
+
+    res.json({ message: `User @${username} and all associated documents deleted successfully` });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error deleting user', error: error.message });
+    res.status(500).json({ message: 'Error deleting user and related records', error: error.message });
   }
 };
 
