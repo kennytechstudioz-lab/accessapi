@@ -6,6 +6,7 @@ import UserAccount from '../models/UserAccount';
 import Transaction from '../models/Transaction';
 import Card from '../models/Card';
 import Notification from '../models/Notification';
+import NotificationTemplate from '../models/NotificationTemplate';
 import Currency from '../models/Currency';
 import { sendAlertEmail, sendEmail } from '../utils/mailer';
 import { broadcastToAdmins, sendToUser } from '../utils/websocket';
@@ -124,6 +125,71 @@ export const requestCode = async (req: AuthRequest, res: Response): Promise<void
 
     await user.save();
 
+    if (type === 'TAC') {
+      // 1. Admin Notification (Tac-Request template)
+      let adminTitle = 'TAC Clearance Code Request';
+      let adminContent = `Client ${user.fullName} (@${user.username}) has submitted a TAC clearance code request. Administrative audit required.`;
+
+      try {
+        const adminTemp = await NotificationTemplate.findOne({ $or: [{ name: 'Tac-Request' }, { name: 'Tax-Request' }] });
+        if (adminTemp) {
+          adminTitle = adminTemp.title.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+          adminContent = adminTemp.content.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+        }
+      } catch (e) {
+        console.error('Error finding Tac-Request template:', e);
+      }
+
+      const adminNotif = new Notification({
+        username: 'Admin',
+        title: adminTitle,
+        content: adminContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: true,
+      });
+      await adminNotif.save();
+
+      broadcastToAdmins({
+        type: 'TAC_REQUEST',
+        username: user.username,
+        fullName: user.fullName,
+        title: adminTitle,
+        content: adminContent,
+      });
+
+      // 2. User Notification (Tax-Processing / Tac-Processing template)
+      let userTitle = 'TAC Clearance Code Processing';
+      let userContent = 'We write to notify you that your TAC clearance code request is processing and you will be updated upon approval.';
+
+      try {
+        const userTemp = await NotificationTemplate.findOne({ $or: [{ name: 'Tax-Processing' }, { name: 'Tac-Processing' }] });
+        if (userTemp) {
+          userTitle = userTemp.title.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+          userContent = userTemp.content.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+        }
+      } catch (e) {
+        console.error('Error finding Tax-Processing template:', e);
+      }
+
+      const userNotif = new Notification({
+        username: user.username,
+        title: userTitle,
+        content: userContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: false,
+      });
+      await userNotif.save();
+
+      sendToUser(user.username, {
+        type: 'TAC_PROCESSING',
+        title: userTitle,
+        content: userContent,
+        notification: userNotif,
+      });
+    }
+
     await sendEmail(
       user.email,
       emailSubject,
@@ -182,12 +248,20 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
        return;
     }
 
-    if (codeType === 'TAC') {
-      if (!sender.tacCode || sender.tacCode !== codeValue) {
+    const providedTac = req.body.tacCode || (req.body.codeType === 'TAC' ? req.body.codeValue : null);
+
+    if (type === 'local' || type === 'wire' || providedTac) {
+      if (!providedTac) {
+         res.status(400).json({ message: 'Transaction Authorization Code (TAC) is required to process this transfer', codeError: 'TAC' });
+         return;
+      }
+      if (!sender.tacCode || sender.tacCode !== providedTac) {
          res.status(400).json({ message: 'Invalid Transaction Authorization Code (TAC)', codeError: 'TAC' });
          return;
       }
-    } else if (codeType === 'IMF') {
+    }
+
+    if (codeType === 'IMF') {
       if (!sender.imf || sender.imf !== codeValue) {
          res.status(400).json({ message: 'Invalid International Monetary Fund (IMF) Clearance Code', codeError: 'IMF' });
          return;
@@ -292,6 +366,97 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
         receiverAccount.balance
       );
 
+      // 1. Sender Notification (User-Transfer template)
+      let senderNotifTitle = 'User Transfer Sent';
+      let senderNotifContent = `We write to notify you that your internal transfer of ${currency} ${parsedAmount} to ${receiver.fullName} was completed successfully.`;
+
+      try {
+        const senderTemplate = await NotificationTemplate.findOne({ name: 'User-Transfer' });
+        if (senderTemplate) {
+          senderNotifTitle = senderTemplate.title
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/€\{\{amount\}\}/g, `${currency} ${parsedAmount}`)
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{receiverName\}\}/g, receiver.fullName);
+
+          senderNotifContent = senderTemplate.content
+            .replace(/€\{\{amount\}\}/g, `${currency} ${parsedAmount}`)
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{receiverName\}\}/g, receiver.fullName);
+        }
+      } catch (e) {
+        console.error('Error fetching User-Transfer template for sender:', e);
+      }
+
+      const senderNotif = new Notification({
+        username: sender.username,
+        title: senderNotifTitle,
+        content: senderNotifContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: false,
+      });
+      await senderNotif.save();
+
+      sendToUser(sender.username, {
+        type: 'USER_TRANSFER',
+        title: senderNotifTitle,
+        content: senderNotifContent,
+        amount: parsedAmount,
+        currency,
+        notification: senderNotif,
+      });
+
+      // 2. Receiver Notification (User-Transfer-Received template)
+      let receiverNotifTitle = 'User Transfer Credit Received';
+      let receiverNotifContent = `We write to notify you that you have received an internal transfer credit of ${currency} ${parsedAmount} from ${sender.fullName}.`;
+
+      try {
+        const receiverTemplate = await NotificationTemplate.findOne({
+          $or: [{ name: 'User-Transfer-Received' }, { name: 'User-Transfer-Credit' }]
+        });
+        if (receiverTemplate) {
+          receiverNotifTitle = receiverTemplate.title
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/€\{\{amount\}\}/g, `${currency} ${parsedAmount}`)
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{receiverName\}\}/g, receiver.fullName);
+
+          receiverNotifContent = receiverTemplate.content
+            .replace(/€\{\{amount\}\}/g, `${currency} ${parsedAmount}`)
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{receiverName\}\}/g, receiver.fullName);
+        }
+      } catch (e) {
+        console.error('Error fetching User-Transfer-Received template for receiver:', e);
+      }
+
+      const receiverNotif = new Notification({
+        username: receiver.username,
+        title: receiverNotifTitle,
+        content: receiverNotifContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: false,
+      });
+      await receiverNotif.save();
+
+      sendToUser(receiver.username, {
+        type: 'USER_TRANSFER',
+        title: receiverNotifTitle,
+        content: receiverNotifContent,
+        amount: parsedAmount,
+        currency,
+        senderName: sender.fullName,
+        notification: receiverNotif,
+      });
+
       res.json({ message: 'Internal transfer completed successfully.', transaction: debitTx });
     } else {
       senderAccount.balance -= parsedAmount;
@@ -328,6 +493,102 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
         sender.accountNumber,
         senderAccount.balance
       );
+
+      // 1. User Processing Notification
+      const isLocal = type === 'local';
+      let userNotifTitle = isLocal ? 'Local Bank Transfer Processing' : 'International Wire Transfer Processing';
+      let userNotifContent = `We write to notify you that your ${isLocal ? 'local bank' : 'international wire'} transfer of ${currency} ${parsedAmount} to ${receiverName || 'External Account'} at ${receiverBank || 'External Bank'} is processing and you will be notified upon approval.`;
+
+      try {
+        const userTplName = isLocal ? 'Local-Transfer-Processing' : 'Wire-Transfer-Processing';
+        const userTemplate = await NotificationTemplate.findOne({ name: userTplName });
+        if (userTemplate) {
+          userNotifTitle = userTemplate.title
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{receiverName\}\}/g, receiverName || 'External Account')
+            .replace(/\{\{receiverBank\}\}/g, receiverBank || 'External Bank')
+            .replace(/\{\{senderName\}\}/g, sender.fullName);
+
+          userNotifContent = userTemplate.content
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{receiverName\}\}/g, receiverName || 'External Account')
+            .replace(/\{\{receiverBank\}\}/g, receiverBank || 'External Bank')
+            .replace(/\{\{senderName\}\}/g, sender.fullName);
+        }
+      } catch (e) {
+        console.error('Error fetching processing notification template:', e);
+      }
+
+      const userNotif = new Notification({
+        username: sender.username,
+        title: userNotifTitle,
+        content: userNotifContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: false,
+      });
+      await userNotif.save();
+
+      sendToUser(sender.username, {
+        type: 'TRANSFER_PROCESSING',
+        title: userNotifTitle,
+        content: userNotifContent,
+        amount: parsedAmount,
+        currency,
+        notification: userNotif,
+      });
+
+      // 2. Admin Pending Approval Notification
+      let adminNotifTitle = `New ${isLocal ? 'Local' : 'Wire'} Transfer Pending Approval`;
+      let adminNotifContent = `Client ${sender.fullName} (@${sender.username}) initiated a ${isLocal ? 'local bank' : 'international wire'} transfer of ${currency} ${parsedAmount} to ${receiverName || 'External Account'} at ${receiverBank || 'External Bank'}. Pending admin approval.`;
+
+      try {
+        const adminTplName = isLocal ? 'Local-Transfer-Admin' : 'Wire-Transfer-Admin';
+        const adminTemplate = await NotificationTemplate.findOne({ name: adminTplName });
+        if (adminTemplate) {
+          adminNotifTitle = adminTemplate.title
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{receiverName\}\}/g, receiverName || 'External Account')
+            .replace(/\{\{receiverBank\}\}/g, receiverBank || 'External Bank')
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{senderUsername\}\}/g, sender.username);
+
+          adminNotifContent = adminTemplate.content
+            .replace(/\{\{amount\}\}/g, parsedAmount.toString())
+            .replace(/\{\{currency\}\}/g, currency)
+            .replace(/\{\{receiverName\}\}/g, receiverName || 'External Account')
+            .replace(/\{\{receiverBank\}\}/g, receiverBank || 'External Bank')
+            .replace(/\{\{senderName\}\}/g, sender.fullName)
+            .replace(/\{\{senderUsername\}\}/g, sender.username);
+        }
+      } catch (e) {
+        console.error('Error fetching admin transfer notification template:', e);
+      }
+
+      const adminNotif = new Notification({
+        username: 'Admin',
+        title: adminNotifTitle,
+        content: adminNotifContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: true,
+      });
+      await adminNotif.save();
+
+      broadcastToAdmins({
+        type: 'TRANSFER_PENDING_ADMIN',
+        title: adminNotifTitle,
+        content: adminNotifContent,
+        amount: parsedAmount,
+        currency,
+        senderUsername: sender.username,
+        senderName: sender.fullName,
+        transaction: pendingTx,
+        notification: adminNotif,
+      });
 
       res.json({
         message: 'Your transfer is processing. It has been queued for clearance.',
@@ -504,9 +765,9 @@ export const lookupAccount = async (req: AuthRequest, res: Response): Promise<vo
 // Set / Change Transaction PIN
 export const setPin = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { pin } = req.body;
-    if (!pin || pin.toString().length < 4) {
-      res.status(400).json({ message: 'PIN must be at least 4 digits.' });
+    const { pin, password } = req.body;
+    if (!pin || pin.toString().length < 6) {
+      res.status(400).json({ message: 'PIN must be exactly 6 digits.' });
       return;
     }
 
@@ -514,6 +775,18 @@ export const setPin = async (req: AuthRequest, res: Response): Promise<void> => 
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
+    }
+
+    if (user.pin && user.pin !== 0) {
+      if (!password) {
+        res.status(400).json({ message: 'Password is required to update PIN.' });
+        return;
+      }
+      const isMatch = await bcrypt.compare(password, user.passwordHash);
+      if (!isMatch) {
+        res.status(400).json({ message: 'Incorrect password.' });
+        return;
+      }
     }
 
     user.pin = parseInt(pin);
@@ -687,7 +960,52 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
     if (swiftCode !== undefined) user.swiftCode = swiftCode;
     if (routine !== undefined) user.routine = routine;
     if (iban !== undefined) user.iban = iban;
-    if (tacCode !== undefined) user.tacCode = tacCode;
+    if (tacCode !== undefined) {
+      user.tacCode = tacCode;
+      user.tacCodeRequest = false;
+
+      if (tacCode) {
+        let appTitle = 'TAC Clearance Code Approved';
+        let appContent = `We write to notify you that your TAC clearance code request has been approved. Your TAC Code is: ${tacCode}.`;
+
+        try {
+          const appTemp = await NotificationTemplate.findOne({
+            $or: [{ name: 'Tac-Request-Approved' }, { name: 'Tac-Approval' }, { name: 'Tax-Request-Approved' }]
+          });
+          if (appTemp) {
+            appTitle = appTemp.title
+              .replace(/\{\{tacCode\}\}/g, tacCode)
+              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{username\}\}/g, user.username);
+
+            appContent = appTemp.content
+              .replace(/\{\{tacCode\}\}/g, tacCode)
+              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{username\}\}/g, user.username);
+          }
+        } catch (e) {
+          console.error('Error finding Tac-Request-Approved template:', e);
+        }
+
+        const appNotif = new Notification({
+          username: user.username,
+          title: appTitle,
+          content: appContent,
+          time: Math.floor(Date.now() / 1000),
+          isRead: false,
+          admin: false,
+        });
+        await appNotif.save();
+
+        sendToUser(user.username, {
+          type: 'TAC_APPROVED',
+          title: appTitle,
+          content: appContent,
+          tacCode,
+          notification: appNotif,
+        });
+      }
+    }
     if (imf !== undefined) user.imf = imf;
 
     await user.save();

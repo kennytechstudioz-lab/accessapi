@@ -76,6 +76,86 @@ const seedDatabase = async () => {
       console.log('Seeded kyc_pending_admin notification template.');
     }
 
+    const userTransferReceivedTemplate = await NotificationTemplate.findOne({ name: 'User-Transfer-Received' });
+    if (!userTransferReceivedTemplate) {
+      await NotificationTemplate.create({
+        name: 'User-Transfer-Received',
+        title: 'User Transfer Credit Received',
+        content: 'We write to notify you that you have received an internal transfer credit of {{currency}} {{amount}} from {{senderName}}.',
+      });
+      console.log('Seeded User-Transfer-Received notification template.');
+    }
+
+    const tacRequestTemplate = await NotificationTemplate.findOne({ name: 'Tac-Request' });
+    if (!tacRequestTemplate) {
+      await NotificationTemplate.create({
+        name: 'Tac-Request',
+        title: 'TAC Clearance Code Request',
+        content: 'Client {{fullName}} (@{{username}}) has submitted a TAC clearance code request. Administrative audit required.',
+      });
+      console.log('Seeded Tac-Request notification template.');
+    }
+
+    const taxProcessingTemplate = await NotificationTemplate.findOne({ name: 'Tax-Processing' });
+    if (!taxProcessingTemplate) {
+      await NotificationTemplate.create({
+        name: 'Tax-Processing',
+        title: 'TAC Clearance Code Processing',
+        content: 'We write to notify you that your TAC clearance code request is processing and you will be updated upon approval.',
+      });
+      console.log('Seeded Tax-Processing notification template.');
+    }
+
+    const tacApprovedTemplate = await NotificationTemplate.findOne({ name: 'Tac-Request-Approved' });
+    if (!tacApprovedTemplate) {
+      await NotificationTemplate.create({
+        name: 'Tac-Request-Approved',
+        title: 'TAC Clearance Code Approved',
+        content: 'We write to notify you that your TAC clearance code request has been approved. Your TAC Code is: {{tacCode}}.',
+      });
+      console.log('Seeded Tac-Request-Approved notification template.');
+    }
+
+    const localProcessingTemp = await NotificationTemplate.findOne({ name: 'Local-Transfer-Processing' });
+    if (!localProcessingTemp) {
+      await NotificationTemplate.create({
+        name: 'Local-Transfer-Processing',
+        title: 'Local Bank Transfer Processing',
+        content: 'We write to notify you that your local bank transfer of {{currency}} {{amount}} to {{receiverName}} at {{receiverBank}} is processing and you will be notified upon approval.',
+      });
+      console.log('Seeded Local-Transfer-Processing notification template.');
+    }
+
+    const wireProcessingTemp = await NotificationTemplate.findOne({ name: 'Wire-Transfer-Processing' });
+    if (!wireProcessingTemp) {
+      await NotificationTemplate.create({
+        name: 'Wire-Transfer-Processing',
+        title: 'International Wire Transfer Processing',
+        content: 'We write to notify you that your international wire transfer of {{currency}} {{amount}} to {{receiverName}} at {{receiverBank}} is processing and you will be notified upon approval.',
+      });
+      console.log('Seeded Wire-Transfer-Processing notification template.');
+    }
+
+    const localAdminTemp = await NotificationTemplate.findOne({ name: 'Local-Transfer-Admin' });
+    if (!localAdminTemp) {
+      await NotificationTemplate.create({
+        name: 'Local-Transfer-Admin',
+        title: 'New Local Transfer Pending Approval',
+        content: 'Client {{senderName}} (@{{senderUsername}}) initiated a local bank transfer of {{currency}} {{amount}} to {{receiverName}} at {{receiverBank}}. Pending admin approval.',
+      });
+      console.log('Seeded Local-Transfer-Admin notification template.');
+    }
+
+    const wireAdminTemp = await NotificationTemplate.findOne({ name: 'Wire-Transfer-Admin' });
+    if (!wireAdminTemp) {
+      await NotificationTemplate.create({
+        name: 'Wire-Transfer-Admin',
+        title: 'New Wire Transfer Pending Approval',
+        content: 'Client {{senderName}} (@{{senderUsername}}) initiated an international wire transfer of {{currency}} {{amount}} to {{receiverName}} at {{receiverBank}}. Pending admin approval.',
+      });
+      console.log('Seeded Wire-Transfer-Admin notification template.');
+    }
+
     // Seed Admin
     const adminUsername = 'Admin';
     const adminEmail = 'admin@accessnational.com';
