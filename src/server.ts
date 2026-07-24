@@ -181,6 +181,18 @@ const seedDatabase = async () => {
       console.log('Seeded KYC-Rejected notification template.');
     }
 
+    const transferDeclinedTemp = await NotificationTemplate.findOne({
+      $or: [{ name: 'Transfer-Declined' }, { name: 'transfer_declined' }]
+    });
+    if (!transferDeclinedTemp) {
+      await NotificationTemplate.create({
+        name: 'Transfer-Declined',
+        title: 'Transfer Declined & Refunded',
+        content: 'We write to notify you that your {{transferType}} of {{currency}} {{amount}} to {{receiverName}} has been declined by administration. {{reasonText}}The debited amount of {{currency}} {{amount}} has been re-credited back to your available balance.',
+      });
+      console.log('Seeded Transfer-Declined notification template.');
+    }
+
     // Seed Admin
     const adminUsername = 'Admin';
     const adminEmail = 'admin@accessnational.com';

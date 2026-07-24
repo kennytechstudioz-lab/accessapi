@@ -21,6 +21,7 @@ export interface ITransaction extends Document {
   routineNumber: string;
   receiverAddress: string;
   transactionState: string;
+  declineReason: string;
 }
 
 const TransactionSchema: Schema = new Schema({
@@ -32,7 +33,7 @@ const TransactionSchema: Schema = new Schema({
   receiverAccountNumber: { type: String, default: '' },
   receiverBank: { type: String, default: '' },
   receiverUsername: { type: String, default: '' },
-  status: { type: String, default: 'Pending' }, // Pending, Approved, Failed
+  status: { type: String, default: 'Pending' }, // Pending, Approved, Failed, Declined
   time: { type: Number, default: () => Date.now() },
   senderName: { type: String, default: '' },
   email: { type: String, default: '' },
@@ -44,6 +45,7 @@ const TransactionSchema: Schema = new Schema({
   routineNumber: { type: String, default: '' },
   receiverAddress: { type: String, default: '' },
   transactionState: { type: String, default: '' },
+  declineReason: { type: String, default: '' },
 }, { timestamps: true });
 
 export default mongoose.model<ITransaction>('Transaction', TransactionSchema);

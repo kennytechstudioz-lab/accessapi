@@ -5,6 +5,10 @@ import User from '../models/User';
 import UserAccount from '../models/UserAccount';
 import { sendAlertEmail } from '../utils/mailer';
 
+import Notification from '../models/Notification';
+import NotificationTemplate from '../models/NotificationTemplate';
+import { sendToUser } from '../utils/websocket';
+
 // List Transactions
 export const listTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -15,10 +19,10 @@ export const listTransactions = async (req: AuthRequest, res: Response): Promise
   }
 };
 
-// Resolve Transaction
+// Resolve Transaction (Approve or Decline)
 export const resolveTransaction = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { status } = req.body; // Approved or Failed
+    const { status, reason } = req.body; // 'Approved' or 'Declined'
     const tx = await Transaction.findById(req.params.id);
     if (!tx) {
        res.status(404).json({ message: 'Transaction not found' });
@@ -30,27 +34,80 @@ export const resolveTransaction = async (req: AuthRequest, res: Response): Promi
        return;
     }
 
-    tx.status = status;
+    const isDecline = status === 'Declined' || status === 'Failed' || status === 'Rejected';
+    const finalStatus = isDecline ? 'Declined' : 'Approved';
+
+    tx.status = finalStatus;
+    if (isDecline && reason && typeof reason === 'string') {
+      tx.declineReason = reason.trim();
+    }
     await tx.save();
 
     const user = await User.findOne({ username: tx.username });
     if (user) {
       const userAccount = await UserAccount.findOne({ username: tx.username, currency: tx.currency });
       
-      if (status === 'Failed') {
-        // Refund amount back to client
+      if (isDecline) {
+        // 1. Refund/recredit debited amount back to client account
         if (userAccount) {
           userAccount.balance += tx.amount;
           userAccount.totalSpending = Math.max(0, (userAccount.totalSpending || 0) - tx.amount);
           await userAccount.save();
         }
+
+        // 2. Dispatch Decline Notification to User
+        let appTitle = 'Transfer Declined & Refunded';
+        const formattedReason = tx.declineReason ? `Reason: ${tx.declineReason}. ` : '';
+        const transferTypeLabel = tx.transactionType === 'Wire-Transfer' ? 'International Wire Transfer' : 'Local Bank Transfer';
+        let appContent = `We write to notify you that your ${transferTypeLabel} of ${tx.currency} ${tx.amount.toLocaleString()} to ${tx.receiverName || 'recipient'} has been declined by administration. ${formattedReason}The debited amount of ${tx.currency} ${tx.amount.toLocaleString()} has been re-credited back to your available balance.`;
+
+        try {
+          const appTemp = await NotificationTemplate.findOne({
+            $or: [{ name: 'Transfer-Declined' }, { name: 'transfer_declined' }]
+          });
+          if (appTemp) {
+            appTitle = appTemp.title
+              .replace(/\{\{transferType\}\}/g, transferTypeLabel)
+              .replace(/\{\{amount\}\}/g, tx.amount.toLocaleString())
+              .replace(/\{\{currency\}\}/g, tx.currency)
+              .replace(/\{\{receiverName\}\}/g, tx.receiverName || 'recipient');
+
+            appContent = appTemp.content
+              .replace(/\{\{transferType\}\}/g, transferTypeLabel)
+              .replace(/\{\{amount\}\}/g, tx.amount.toLocaleString())
+              .replace(/\{\{currency\}\}/g, tx.currency)
+              .replace(/\{\{receiverName\}\}/g, tx.receiverName || 'recipient')
+              .replace(/\{\{reasonText\}\}/g, formattedReason);
+          }
+        } catch (e) {
+          console.error('Error finding Transfer-Declined template:', e);
+        }
+
+        const decNotif = new Notification({
+          username: user.username,
+          title: appTitle,
+          content: appContent,
+          time: Math.floor(Date.now() / 1000),
+          isRead: false,
+          admin: false,
+        });
+        await decNotif.save();
+
+        sendToUser(user.username, {
+          type: 'TRANSFER_DECLINED',
+          title: appTitle,
+          content: appContent,
+          reason: tx.declineReason,
+          transaction: tx,
+          notification: decNotif,
+        });
       }
 
-      // Send Alert Email (using CREDIT or DEBIT)
+      // Send Alert Email (CREDIT for decline refund, DEBIT for approval)
       await sendAlertEmail(
         user.email,
         user.fullName,
-        status === 'Approved' ? 'DEBIT' : 'CREDIT',
+        finalStatus === 'Approved' ? 'DEBIT' : 'CREDIT',
         tx.amount,
         tx.currency,
         tx.symbol,
@@ -60,7 +117,7 @@ export const resolveTransaction = async (req: AuthRequest, res: Response): Promi
       );
     }
 
-    res.json({ message: `Transaction status marked as ${status} successfully.`, transaction: tx });
+    res.json({ message: `Transaction status marked as ${finalStatus} successfully.`, transaction: tx });
   } catch (error: any) {
     res.status(500).json({ message: 'Error resolving transaction', error: error.message });
   }
