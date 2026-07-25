@@ -8,7 +8,7 @@ import Card from '../models/Card';
 import Notification from '../models/Notification';
 import NotificationTemplate from '../models/NotificationTemplate';
 import Currency from '../models/Currency';
-import { sendAlertEmail, sendEmail } from '../utils/mailer';
+import { sendAlertEmail, sendEmail, sendCustomEmail } from '../utils/mailer';
 import { broadcastToAdmins, sendToUser } from '../utils/websocket';
 
 
@@ -190,21 +190,20 @@ export const requestCode = async (req: AuthRequest, res: Response): Promise<void
       });
     }
 
-    await sendEmail(
+    await sendCustomEmail(
       user.email,
       emailSubject,
       `
-        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #e53e3e; text-align: center;">Access National Bank</h2>
-          <p>Dear ${user.fullName},</p>
-          <p>You have requested a security clearance code for a pending transaction.</p>
+        <p style="margin-top: 0;">Dear <strong>${user.fullName}</strong>,</p>
+        <p>You have requested a security clearance code for a pending transaction clearance on your account.</p>
+        <div style="margin: 20px 0; padding: 18px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center;">
           ${emailBody}
-          <p>Please enter this code on the transfer confirmation screen to proceed.</p>
-          <p>If you did not initiate this transfer, please contact our security team immediately.</p>
-          <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 20px 0;" />
-          <p style="font-size: 11px; color: #a0aec0; text-align: center;">&copy; Access National Bank support.</p>
         </div>
-      `
+        <p>Please enter this code on the transfer verification screen to proceed with your clearance.</p>
+        <p style="color: #e53e3e; font-size: 12px;"><strong>Security Warning:</strong> Access National staff will never ask for your authorization code or online banking password over the phone.</p>
+      `,
+      'Transaction Security Clearance Code',
+      'TAC Clearance'
     );
 
     res.json({ message: `A ${type} code has been generated and sent to your registered email.` });
