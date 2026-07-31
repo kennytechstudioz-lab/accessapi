@@ -10,6 +10,7 @@ import {
   getAccounts,
   getTransactions,
   requestCode,
+  validateCode,
   performTransfer,
   submitKyc,
   getCards,
@@ -46,6 +47,7 @@ router.get('/transactions', authenticateToken, getTransactions);
 
 // Request Code (TAC / IMF / TAX)
 router.post('/request-code', authenticateToken, requestCode);
+router.post('/validate-code', authenticateToken, validateCode);
 
 // Perform Transfer
 router.post('/transfer', authenticateToken, performTransfer);

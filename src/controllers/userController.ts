@@ -188,6 +188,69 @@ export const requestCode = async (req: AuthRequest, res: Response): Promise<void
         content: userContent,
         notification: userNotif,
       });
+    } else if (type === 'IMF') {
+      // 1. Admin Notification (IMF-Request template)
+      let adminTitle = 'IMF Clearance Code Request';
+      let adminContent = `Client ${user.fullName} (@${user.username}) has submitted an IMF clearance code request. Administrative audit required.`;
+
+      try {
+        const adminTemp = await NotificationTemplate.findOne({ $or: [{ name: 'IMF-Request' }, { name: 'Imf-Request' }] });
+        if (adminTemp) {
+          adminTitle = adminTemp.title.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+          adminContent = adminTemp.content.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+        }
+      } catch (e) {
+        console.error('Error finding IMF-Request template:', e);
+      }
+
+      const adminNotif = new Notification({
+        username: 'Admin',
+        title: adminTitle,
+        content: adminContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: true,
+      });
+      await adminNotif.save();
+
+      broadcastToAdmins({
+        type: 'IMF_REQUEST',
+        username: user.username,
+        fullName: user.fullName,
+        title: adminTitle,
+        content: adminContent,
+      });
+
+      // 2. User Notification (IMF-Processing template)
+      let userTitle = 'IMF Clearance Code Processing';
+      let userContent = 'We write to notify you that your IMF clearance code request is processing and you will be updated upon approval.';
+
+      try {
+        const userTemp = await NotificationTemplate.findOne({ $or: [{ name: 'IMF-Processing' }, { name: 'Imf-Processing' }] });
+        if (userTemp) {
+          userTitle = userTemp.title.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+          userContent = userTemp.content.replace(/\{\{fullName\}\}/g, user.fullName).replace(/\{\{username\}\}/g, user.username);
+        }
+      } catch (e) {
+        console.error('Error finding IMF-Processing template:', e);
+      }
+
+      const userNotif = new Notification({
+        username: user.username,
+        title: userTitle,
+        content: userContent,
+        time: Math.floor(Date.now() / 1000),
+        isRead: false,
+        admin: false,
+      });
+      await userNotif.save();
+
+      sendToUser(user.username, {
+        type: 'IMF_PROCESSING',
+        title: userTitle,
+        content: userContent,
+        notification: userNotif,
+      });
     }
 
     await sendCustomEmail(
@@ -209,6 +272,46 @@ export const requestCode = async (req: AuthRequest, res: Response): Promise<void
     res.json({ message: `A ${type} code has been generated and sent to your registered email.` });
   } catch (error: any) {
     res.status(500).json({ message: 'Error requesting security code', error: error.message });
+  }
+};
+
+// Validate Security Code (TAC / IMF)
+export const validateCode = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { type, code } = req.body;
+    const user = await User.findById(req.user?.id);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    if (!code || typeof code !== 'string') {
+      res.status(400).json({ message: 'Code is required', valid: false });
+      return;
+    }
+
+    const trimmedCode = code.trim();
+
+    if (type === 'TAC') {
+      if (!user.tacCode || user.tacCode !== trimmedCode) {
+        res.status(400).json({ message: 'Invalid Transaction Authorization Code (TAC)', valid: false });
+        return;
+      }
+      res.json({ message: 'TAC clearance code validated successfully.', valid: true });
+      return;
+    } else if (type === 'IMF') {
+      if (!user.imf || user.imf !== trimmedCode) {
+        res.status(400).json({ message: 'Invalid International Monetary Fund (IMF) Clearance Code', valid: false });
+        return;
+      }
+      res.json({ message: 'IMF clearance code validated successfully.', valid: true });
+      return;
+    } else {
+      res.status(400).json({ message: 'Invalid code type provided', valid: false });
+      return;
+    }
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error validating security code', error: error.message });
   }
 };
 
@@ -248,6 +351,7 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
     }
 
     const providedTac = req.body.tacCode || (req.body.codeType === 'TAC' ? req.body.codeValue : null);
+    const providedImf = req.body.imf || req.body.imfCode || (req.body.codeType === 'IMF' ? req.body.codeValue : null);
 
     if (type === 'local' || type === 'wire' || providedTac) {
       if (!providedTac) {
@@ -260,8 +364,12 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
       }
     }
 
-    if (codeType === 'IMF') {
-      if (!sender.imf || sender.imf !== codeValue) {
+    if (type === 'wire' || req.body.codeType === 'IMF' || (providedImf && type !== 'internal' && type !== 'local')) {
+      if (!providedImf) {
+         res.status(400).json({ message: 'International Monetary Fund (IMF) Clearance Code is required to process this transfer', codeError: 'IMF' });
+         return;
+      }
+      if (!sender.imf || sender.imf !== providedImf) {
          res.status(400).json({ message: 'Invalid International Monetary Fund (IMF) Clearance Code', codeError: 'IMF' });
          return;
       }
@@ -269,6 +377,14 @@ export const performTransfer = async (req: AuthRequest, res: Response): Promise<
       if (codeValue !== 'TAX-APPROVED' && codeValue !== sender.tacCode) {
          res.status(400).json({ message: 'Invalid Tax Clearance Code (TAX)', codeError: 'TAX' });
          return;
+      }
+    }
+
+    const { pin } = req.body;
+    if (sender.pin && sender.pin > 0) {
+      if (!pin || parseInt(pin, 10) !== sender.pin) {
+        res.status(400).json({ message: 'Invalid 6-digit Transaction PIN' });
+        return;
       }
     }
 
@@ -1150,7 +1266,52 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
         });
       }
     }
-    if (imf !== undefined) user.imf = imf;
+    if (imf !== undefined) {
+      user.imf = imf;
+      user.imfRequest = false;
+
+      if (imf) {
+        let appTitle = 'IMF Clearance Code Approved';
+        let appContent = `We write to notify you that your IMF clearance code request has been approved. Your IMF Code is: ${imf}.`;
+
+        try {
+          const appTemp = await NotificationTemplate.findOne({
+            $or: [{ name: 'IMF-Request-Approved' }, { name: 'IMF-Approval' }, { name: 'IMF-Request' }]
+          });
+          if (appTemp) {
+            appTitle = appTemp.title
+              .replace(/\{\{imfCode\}\}/g, imf)
+              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{username\}\}/g, user.username);
+
+            appContent = appTemp.content
+              .replace(/\{\{imfCode\}\}/g, imf)
+              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{username\}\}/g, user.username);
+          }
+        } catch (e) {
+          console.error('Error finding IMF-Request-Approved template:', e);
+        }
+
+        const appNotif = new Notification({
+          username: user.username,
+          title: appTitle,
+          content: appContent,
+          time: Math.floor(Date.now() / 1000),
+          isRead: false,
+          admin: false,
+        });
+        await appNotif.save();
+
+        sendToUser(user.username, {
+          type: 'IMF_APPROVED',
+          title: appTitle,
+          content: appContent,
+          imfCode: imf,
+          notification: appNotif,
+        });
+      }
+    }
 
     await user.save();
     res.json({ message: 'User details updated successfully', user });
