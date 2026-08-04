@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth';
 import Currency from '../models/Currency';
+import UserAccount from '../models/UserAccount';
 
 // List Currencies
 export const listCurrencies = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -57,6 +58,13 @@ export const updateCurrency = async (req: AuthRequest, res: Response): Promise<v
     if (accountNumber !== undefined) currency.accountNumber = accountNumber;
 
     await currency.save();
+
+    // Sync updated logo and symbol to all user wallets that use this currency
+    await UserAccount.updateMany(
+      { currency: currency.name },
+      { $set: { logo: currency.logo || '', symbol: currency.symbol || '' } }
+    );
+
     res.json({ message: 'Currency updated successfully', currency });
   } catch (error: any) {
     res.status(500).json({ message: 'Error updating currency', error: error.message });

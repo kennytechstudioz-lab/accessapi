@@ -65,6 +65,28 @@ export const getAccounts = async (req: AuthRequest, res: Response): Promise<void
       if (createdNew) {
         accounts = await UserAccount.find({ username: req.user?.username });
       }
+
+      // Sync logo & symbol from master currency into each user account (self-heal stale data)
+      const updatePromises: Promise<any>[] = [];
+      for (const acc of accounts) {
+        const masterCurr = adminCurrencies.find((c) => c.name === acc.currency);
+        if (masterCurr) {
+          const newLogo = masterCurr.logo || '';
+          const newSymbol = masterCurr.symbol || acc.symbol;
+          if (acc.logo !== newLogo || acc.symbol !== newSymbol) {
+            updatePromises.push(
+              UserAccount.updateOne(
+                { _id: acc._id },
+                { $set: { logo: newLogo, symbol: newSymbol } }
+              )
+            );
+          }
+        }
+      }
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+        accounts = await UserAccount.find({ username: req.user?.username });
+      }
     }
 
     res.json(accounts);
@@ -1235,12 +1257,12 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
           if (appTemp) {
             appTitle = appTemp.title
               .replace(/\{\{tacCode\}\}/g, tacCode)
-              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
               .replace(/\{\{username\}\}/g, user.username);
 
             appContent = appTemp.content
               .replace(/\{\{tacCode\}\}/g, tacCode)
-              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
               .replace(/\{\{username\}\}/g, user.username);
           }
         } catch (e) {
@@ -1281,12 +1303,12 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
           if (appTemp) {
             appTitle = appTemp.title
               .replace(/\{\{imfCode\}\}/g, imf)
-              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
               .replace(/\{\{username\}\}/g, user.username);
 
             appContent = appTemp.content
               .replace(/\{\{imfCode\}\}/g, imf)
-              .replace(/\{\{fullName\}\}/g, user.fullName)
+              .replace(/\{\{fullName\}\}/g, user.fullName || user.username)
               .replace(/\{\{username\}\}/g, user.username);
           }
         } catch (e) {

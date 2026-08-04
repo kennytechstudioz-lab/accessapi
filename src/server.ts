@@ -45,6 +45,15 @@ app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'Access National Bank API is active.' });
 });
 
+// Global JSON Error Handler — must be last middleware, after all routes
+// Prevents Express from returning HTML error pages (which cause "unexpected token doctype" on the frontend)
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error('[Global Error Handler]', err);
+  const statusCode = err.status || err.statusCode || 500;
+  const message = err.message || 'An unexpected server error occurred.';
+  res.status(statusCode).json({ message, error: process.env.NODE_ENV !== 'production' ? err.stack : undefined });
+});
+
 // Seed Admin Account, Notification Templates & Default Settings
 const seedDatabase = async () => {
   try {
