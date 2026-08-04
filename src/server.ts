@@ -10,6 +10,7 @@ import adminRoutes from './routes/admin';
 import User from './models/User';
 import SystemSettings from './models/SystemSettings';
 import NotificationTemplate from './models/NotificationTemplate';
+import EmailTemplate from './models/EmailTemplate';
 import { initWebSocketServer } from './utils/websocket';
 
 dotenv.config();
@@ -200,6 +201,32 @@ const seedDatabase = async () => {
         content: 'We write to notify you that your {{transferType}} of {{currency}} {{amount}} to {{receiverName}} has been declined by administration. {{reasonText}}The debited amount of {{currency}} {{amount}} has been re-credited back to your available balance.',
       });
       console.log('Seeded Transfer-Declined notification template.');
+    }
+
+    // Seed Card_Approval email template
+    const cardApprovalEmailTemp = await EmailTemplate.findOne({ name: 'Card_Approval' });
+    if (!cardApprovalEmailTemp) {
+      await EmailTemplate.create({
+        name: 'Card_Approval',
+        title: 'Your Debit Card Request Has Been Approved',
+        content: `Dear {{fullName}},
+
+Congratulations! We are pleased to inform you that your debit card request has been reviewed and approved by our administration desk.
+
+Card Details:
+- Card Type: {{cardType}}
+- Card Holder: {{cardHolder}}
+- Card Number: {{cardNumber}}
+- Expiry Date: {{expiryDate}}
+
+Your card is now active and ready for use. You can view your card details at any time from your dashboard.
+
+If you did not request this card or have any concerns, please contact our support team immediately.
+
+Best Regards,
+Access National Bank`,
+      });
+      console.log('Seeded Card_Approval email template.');
     }
 
     // Seed Admin
