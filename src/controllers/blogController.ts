@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middlewares/auth';
 import Blog from '../models/Blog';
+import { uploadBase64ToS3 } from '../utils/s3Upload';
 
 // List Blogs
 export const listBlogs = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -21,11 +22,14 @@ export const createBlog = async (req: AuthRequest, res: Response): Promise<void>
        return;
     }
 
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
+    const uploadedBanner = banner ? await uploadBase64ToS3(banner, 'blog-banner', hostUrl) : '';
+
     const blog = new Blog({
       title,
       subtitle: subtitle || '',
       content,
-      banner: banner || '',
+      banner: uploadedBanner || '',
       category: category || 'Fintech',
       author: author || 'Admin',
       time: Math.floor(Date.now() / 1000),
@@ -48,10 +52,13 @@ export const updateBlog = async (req: AuthRequest, res: Response): Promise<void>
        return;
     }
 
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
     if (title !== undefined) blog.title = title;
     if (subtitle !== undefined) blog.subtitle = subtitle;
     if (content !== undefined) blog.content = content;
-    if (banner !== undefined) blog.banner = banner;
+    if (banner !== undefined) {
+      blog.banner = banner ? await uploadBase64ToS3(banner, 'blog-banner', hostUrl) : '';
+    }
     if (category !== undefined) blog.category = category;
     if (author !== undefined) blog.author = author;
 

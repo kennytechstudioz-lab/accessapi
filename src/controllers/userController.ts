@@ -10,6 +10,7 @@ import NotificationTemplate from '../models/NotificationTemplate';
 import Currency from '../models/Currency';
 import { sendAlertEmail, sendEmail, sendCustomEmail } from '../utils/mailer';
 import { broadcastToAdmins, sendToUser } from '../utils/websocket';
+import { uploadBase64ToS3 } from '../utils/s3Upload';
 
 
 // Get Profile
@@ -826,8 +827,9 @@ export const submitKyc = async (req: AuthRequest, res: Response): Promise<void> 
        return;
     }
 
-    if (passport) user.passport = passport;
-    if (profilePicture) user.profilePicture = profilePicture;
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
+    if (passport) user.passport = await uploadBase64ToS3(passport, `kyc-${user.username}`, hostUrl);
+    if (profilePicture) user.profilePicture = await uploadBase64ToS3(profilePicture, `avatar-${user.username}`, hostUrl);
     if (idType) user.idType = idType;
     user.onReview = true;
     await user.save();
@@ -872,6 +874,7 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
     }
 
     let isDocumentSubmitted = false;
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
 
     // Explicitly disallow editing email or username!
     if (fullName !== undefined) user.fullName = fullName;
@@ -889,9 +892,11 @@ export const updateOwnProfile = async (req: AuthRequest, res: Response): Promise
         user.dob = 0;
       }
     }
-    if (profilePicture !== undefined) user.profilePicture = profilePicture;
+    if (profilePicture !== undefined) {
+      user.profilePicture = await uploadBase64ToS3(profilePicture, `avatar-${user.username}`, hostUrl);
+    }
     if (passport !== undefined) {
-      user.passport = passport;
+      user.passport = await uploadBase64ToS3(passport, `kyc-${user.username}`, hostUrl);
       user.onReview = true; // Submit ID sets account under review
       isDocumentSubmitted = true;
     }
@@ -1133,12 +1138,22 @@ export const updateUserDetails = async (req: AuthRequest, res: Response): Promis
       iban,
       tacCode,
       imf,
+      passport,
+      profilePicture,
     } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
        res.status(404).json({ message: 'User not found' });
        return;
+    }
+
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
+    if (passport !== undefined) {
+      user.passport = await uploadBase64ToS3(passport, `kyc-${user.username}`, hostUrl);
+    }
+    if (profilePicture !== undefined) {
+      user.profilePicture = await uploadBase64ToS3(profilePicture, `avatar-${user.username}`, hostUrl);
     }
 
     if (fullName !== undefined) user.fullName = fullName;
