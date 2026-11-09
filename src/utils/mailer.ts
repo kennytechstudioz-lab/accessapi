@@ -4,14 +4,15 @@ import EmailTemplate from '../models/EmailTemplate';
 
 dotenv.config();
 
-export const COMPANY_DOMAIN = process.env.APP_DOMAIN || 'https://accessnationals.com';
-export const COMPANY_LOGO = process.env.COMPANY_LOGO_URL || `${COMPANY_DOMAIN}/logo.png`;
+export const COMPANY_DOMAIN = process.env.APP_DOMAIN || 'https://accessnationalsltd.com';
+export const COMPANY_LOGO = process.env.COMPANY_LOGO_URL || `${COMPANY_DOMAIN}/images/AccessRedLogo.png`;
 export const COMPANY_NAME = 'Access National Bank';
-export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@accessnationalltd.online';
+export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || 'support@accessnationalsltd.com';
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.mailtrap.io',
-  port: parseInt(process.env.SMTP_PORT || '2525'),
+  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: parseInt(process.env.SMTP_PORT || '465') === 465,
   auth: {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
