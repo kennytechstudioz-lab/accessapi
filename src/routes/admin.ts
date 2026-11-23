@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../middlewares/auth';
 import adminUserRoutes from './adminUserRoutes';
 import currencyRoutes from './currencyRoutes';
+import cryptoRoutes from './cryptoRoutes';
 import transactionRoutes from './transactionRoutes';
 import cardRoutes from './cardRoutes';
 import notificationRoutes from './notificationRoutes';
@@ -20,6 +21,7 @@ const router = Router();
 // Sub-routers mapping
 router.use('/users', adminUserRoutes);
 router.use('/currencies', currencyRoutes);
+router.use('/crypto', cryptoRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/cards', cardRoutes);
 router.use('/notifications', notificationRoutes);

@@ -21,6 +21,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead
 } from '../controllers/notificationController';
+import {
+  getActiveCryptoCurrencies,
+  submitCryptoDeposit
+} from '../controllers/cryptoController';
 
 const router = Router();
 
@@ -60,5 +64,9 @@ router.get('/cards', authenticateToken, getCards);
 
 // Request Card
 router.post('/cards/request', authenticateToken, requestCard);
+
+// Crypto Currencies & Deposit
+router.get('/crypto', authenticateToken, getActiveCryptoCurrencies);
+router.post('/crypto-deposit', authenticateToken, submitCryptoDeposit);
 
 export default router;

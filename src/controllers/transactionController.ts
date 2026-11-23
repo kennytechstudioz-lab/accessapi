@@ -101,17 +101,54 @@ export const resolveTransaction = async (req: AuthRequest, res: Response): Promi
           transaction: tx,
           notification: decNotif,
         });
+      } else {
+        // Final status is Approved
+        // If this is a Deposit, credit the user's account balance
+        if (tx.transactionType === 'Deposit' || tx.transactionType === 'Credit') {
+          if (userAccount) {
+            userAccount.balance += tx.amount;
+            userAccount.totalIncome = (userAccount.totalIncome || 0) + tx.amount;
+            userAccount.totalTransactions = (userAccount.totalTransactions || 0) + tx.amount;
+            await userAccount.save();
+          }
+
+          const depTitle = 'Deposit Confirmed & Cleared';
+          const depContent = `Your deposit of ${tx.currency} ${tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} has been approved and credited to your available balance.`;
+          const depNotif = new Notification({
+            username: user.username,
+            title: depTitle,
+            content: depContent,
+            time: Math.floor(Date.now() / 1000),
+            isRead: false,
+            admin: false,
+          });
+          await depNotif.save();
+
+          sendToUser(user.username, {
+            type: 'DEPOSIT_APPROVED',
+            title: depTitle,
+            content: depContent,
+            transaction: tx,
+            notification: depNotif,
+          });
+        }
       }
 
-      // Send Alert Email (CREDIT for decline refund, DEBIT for approval)
+      // Send Alert Email (CREDIT for deposit approval or decline refund, DEBIT for wire/transfer approval)
+      const isCreditType = tx.transactionType === 'Deposit' || tx.transactionType === 'Credit';
+      const alertType = isDecline ? 'CREDIT' : (isCreditType ? 'CREDIT' : 'DEBIT');
+      const stateDescription = isCreditType
+        ? (finalStatus === 'Approved' ? 'Deposit Clearance Credit' : 'Declined Deposit')
+        : (tx.transactionType === 'Wire-Transfer' ? 'Wire Clearance Dispatch' : 'Local Transfer Clearance');
+
       await sendAlertEmail(
         user.email,
         user.fullName,
-        finalStatus === 'Approved' ? 'DEBIT' : 'CREDIT',
+        alertType,
         tx.amount,
         tx.currency,
         tx.symbol,
-        tx.transactionType === 'Wire-Transfer' ? 'Wire Clearance Dispatch' : 'Local Transfer Clearance',
+        stateDescription,
         user.accountNumber,
         userAccount ? userAccount.balance : 0
       );
